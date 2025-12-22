@@ -1,0 +1,22 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Virtual environment folder (not used now, but in future)
+venv/
+
+# Environment variables file (if you use one)
+.env
+
+# IDE/editor files
+.vscode/
+.idea/
+
+# MacOS system files
+.DS_Store
+
+# Logs
+*.log
+
+# Compiled C extensions (if any)
+*.so
