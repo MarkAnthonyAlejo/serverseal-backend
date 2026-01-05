@@ -1,10 +1,13 @@
 #import flask into the app
 from flask import Flask
+from routes import main_bp
 
 # Creates an instance of the flask app
 app = Flask(__name__)
 
-# Define a route for the root URL '/' 
+# Connect the routes from routes.py to this app
+app.register_blueprint(main_bp)
+
 # and link it to the function below
 @app.route("/")
 def home(): 
