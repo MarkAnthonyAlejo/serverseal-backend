@@ -21,8 +21,11 @@ def add_shipment():
 
 @main_bp.route("/api/shipments", methods=["GET"])
 def list_shipments(): 
-     shipments = database.get_all_shipments()
-     return jsonify(shipments)
+     try:
+        shipments = database.get_all_shipments()
+        return jsonify(shipments), 200 
+     except Exception as e: 
+          return jsonify({"error" : str(e)}), 500
 
 # --- EVENT ROUTES (Condition Reporting) ---
 
