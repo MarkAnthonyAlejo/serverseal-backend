@@ -16,6 +16,6 @@ def home():
 #checks if the file is run directly,
 # then start the flask development server
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=5001)
 
 
