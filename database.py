@@ -4,8 +4,8 @@ from psycopg2.extras import RealDictCursor
 # Update these credentials with your local Postgres info
 DB_CONFIG = {
     "dbname": "server_seal",
-    "user": "postgres",
-    "password" : "your_password", 
+    "user": "markalejo",
+    "password" : "", 
     "host" : "localhost", 
     "port" : "5432"
 }
