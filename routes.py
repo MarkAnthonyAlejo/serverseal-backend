@@ -28,7 +28,6 @@ def list_shipments():
           return jsonify({"error" : str(e)}), 500
 
 # --- EVENT ROUTES (Condition Reporting) ---
-
 @main_bp.route("/api/events", methods=["POST"])
 def add_events(): 
      data = request.json

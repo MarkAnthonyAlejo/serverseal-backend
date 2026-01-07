@@ -57,8 +57,8 @@ def create_event(shiptment_id, event_type, location, hardware_details, notes, ha
             return event_id
     finally: 
         conn.close()
-        
-# Gets Specific shipment for that event 
+
+# Gets Specific shipment for all created events
 def get_shipment_with_events(shipment_id):
     conn = get_connection()
     try: 
