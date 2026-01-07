@@ -40,3 +40,10 @@ def get_all_shipments():
             return cur.fetchall()
     finally: 
         conn.close()
+
+# Creating Event 
+def create_event(shiptment_id, event_type, location, hardware_details, notes, handler_id): 
+    query = """
+        INSERT INTO events (shipment_id, event_type, location, hardware_details, notes, handler_id)
+        
+"""
