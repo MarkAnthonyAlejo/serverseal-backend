@@ -57,3 +57,19 @@ def get_full_shipment(shipment_id):
           return jsonify(data), 200
      except Exception as e: 
           return jsonify({"error": str(e)}), 500
+     
+@main_bp.route("/api/media", methods=["POST"])
+def add_media():
+     data = request.json
+     try:
+          #We call the database clerk we just created
+          new_media_id = database.create_media(
+               data['event_id'],
+               data['media_type'], 
+               data['file_url'], 
+               data.get('latitude'), 
+               data.get('longitude')
+          )
+          return jsonify({"media_id": str(new_media_id), "status": "success"}), 201
+     except Exception as e: 
+          return jsonify({"error": str(e)}), 500
