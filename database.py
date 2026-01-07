@@ -77,3 +77,20 @@ def get_shipment_with_events(shipment_id):
             }
     finally: 
         conn.close()
+
+# Here we create / send the data for the media 
+def create_media(event_id, media_type, file_url, latitude=None, longitude=None):
+    query = """
+        INSERT INTO media (event_id, media_type, file_url, latitude, longitude)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING media_id; 
+    """
+    conn = get_connection()
+    try: 
+        with conn.cursor() as cur: 
+            cur.execute(query, (event_id, media_type, file_url, latitude, longitude))
+            media_id = cur.fetchone()[0]
+            conn.commit()
+            return media_id
+    finally: 
+        conn.close()
