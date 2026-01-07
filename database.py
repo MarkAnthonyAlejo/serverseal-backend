@@ -57,3 +57,23 @@ def create_event(shiptment_id, event_type, location, hardware_details, notes, ha
             return event_id
     finally: 
         conn.close()
+        
+# Gets Specific shipment for that event 
+def get_shipment_with_events(shipment_id):
+    conn = get_connection()
+    try: 
+        with conn.cursor() as cur:
+            # 1. Fetch the master shipment record
+            cur.execute("SELECT * FROM shipments WHERE shipment_id = %s", (shipment_id,))
+            shipment = cur.fetchone()
+
+            #2. Fetch all events that "point" to this shipment
+            cur.execute("SELECT * FROM events WHERE shipment_id = %s ORDER BY created_at ASC", (shipment_id,))
+            events = cur.fetchall()
+
+            return {
+                "shipment": shipment, 
+                "history": events
+            }
+    finally: 
+        conn.close()

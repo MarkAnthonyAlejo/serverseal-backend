@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS shipments (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP 
 ); 
 
--- Note: We will add the 'events' and 'media' table later 
 CREATE TABLE IF NOT EXISTS events (
     event_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     shipment_id UUID REFERENCES shipments(shipment_id) ON DELETE CASCADE, 
