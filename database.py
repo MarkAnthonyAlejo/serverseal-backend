@@ -45,5 +45,15 @@ def get_all_shipments():
 def create_event(shiptment_id, event_type, location, hardware_details, notes, handler_id): 
     query = """
         INSERT INTO events (shipment_id, event_type, location, hardware_details, notes, handler_id)
-        
-"""
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING event_id;
+    """
+    conn = get_connection()
+    try: 
+        with conn.cursor() as cur: 
+            cur.execute(query, (shiptment_id, event_type, location, hardware_details, notes, handler_id))
+            event_id = cur.fetchone()[0]
+            conn.commit()
+            return event_id
+    finally: 
+        conn.close()

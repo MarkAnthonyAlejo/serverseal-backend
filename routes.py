@@ -32,5 +32,15 @@ def list_shipments():
 @main_bp.route("/api/events", methods=["POST"])
 def add_events(): 
      data = request.json
-     # You will eventually add database.create_event(..) logice here 
-     return jsonify({"Message" : "Event captured (Logic pending)"}), 201
+     try: 
+          new_event_id = database.create_event(
+               data['shipment_id'], 
+               data['event_type'], 
+               data.get('location'), 
+               data.get('hardware_details'), 
+               data.get('notes'),
+               data.get('handler_id')
+          )
+          return jsonify({"event_id": str(new_event_id), "status" : "success"}), 201 
+     except Exception as e: 
+        return jsonify({"error": str(e)}), 500
