@@ -44,3 +44,17 @@ def add_events():
           return jsonify({"event_id": str(new_event_id), "status" : "success"}), 201 
      except Exception as e: 
         return jsonify({"error": str(e)}), 500
+
+# -- "Full Story"(History of events) of specific shipment
+@main_bp.route("/api/shipments/<uuid:shipment_id>", methods=["GET"])
+def get_full_shipment(shipment_id):
+     try: 
+          # We convert the UUID object to a string for the database query
+          data = database.get_shipment_with_events(str(shipment_id))
+
+          if not data['shipment']: 
+               return jsonify({"error": "Shipment not found"}), 404
+          
+          return jsonify(data), 200
+     except Exception as e: 
+          return jsonify({"error": str(e)}), 500
