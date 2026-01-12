@@ -48,8 +48,7 @@ def add_events():
 @main_bp.route("/api/shipments/<uuid:shipment_id>", methods=["GET"])
 def get_full_shipment(shipment_id):
      try: 
-          # We convert the UUID object to a string for the database query
-          data = database.get_shipment_with_events(str(shipment_id))
+          data = database.get_shipment_with_history(str(shipment_id))
 
           if not data['shipment']: 
                return jsonify({"error": "Shipment not found"}), 404
