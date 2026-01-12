@@ -94,3 +94,47 @@ def create_media(event_id, media_type, file_url, latitude=None, longitude=None):
             return media_id
     finally: 
         conn.close()
+
+# Here is where we fetch all the media and evnets for a shipment 
+def get_shipment_with_history(shipment_id):
+    conn = get_connection()
+    try: 
+        with conn.cursor() as cur: 
+            #1. Get the Master Shipment Data
+            cur.execute("SELECT * FROM shipments WHERE shipment_id = %s", (shipment_id,))
+            shipment = cur.fetchone()
+
+            if not shipment: 
+                return None
+            
+            # 2. Get all Evnets and their associated Media 
+            # We use a subquery to bundle media into a JSON array for each event 
+            query = """
+                SELECT
+                    e.*, 
+                    COALESCE(
+                        json_agg(
+                            json_build_object(
+                                'media_id', m.media_id, 
+                                'type', m.media_type, 
+                                'url', mfile_url, 
+                                'lat', m.latitude, 
+                                'lon', m.longitude
+                            )
+                        ) FILTER (WHERE m.media_id IS NOT NULL), '[]'
+                    ) as evidence_photos
+                FROM events e
+                LEFT JOIN media m ON e.event_id = m.event_id
+                WHERE e.shipment_id = %s 
+                GROUP BY e.event_id
+                ORDER BY e.created_at DESC;
+            """
+            cur.execute(query, (shipment_id,))
+            events = cur.fetchall()
+
+            return {
+                "shipment": shipment, 
+                "history": events
+            }
+    finally: 
+        conn.close()
