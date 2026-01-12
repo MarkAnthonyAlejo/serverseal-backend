@@ -99,7 +99,7 @@ def create_media(event_id, media_type, file_url, latitude=None, longitude=None):
 def get_shipment_with_history(shipment_id):
     conn = get_connection()
     try: 
-        with conn.cursor() as cur: 
+        with conn.cursor(cursor_factory=RealDictCursor) as cur: 
             #1. Get the Master Shipment Data
             cur.execute("SELECT * FROM shipments WHERE shipment_id = %s", (shipment_id,))
             shipment = cur.fetchone()
@@ -117,7 +117,7 @@ def get_shipment_with_history(shipment_id):
                             json_build_object(
                                 'media_id', m.media_id, 
                                 'type', m.media_type, 
-                                'url', mfile_url, 
+                                'url', m.file_url, 
                                 'lat', m.latitude, 
                                 'lon', m.longitude
                             )
