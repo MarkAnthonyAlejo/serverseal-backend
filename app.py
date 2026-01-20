@@ -13,6 +13,8 @@ app = Flask(__name__)
 
 # Configure the app to use that folder 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# This line fixes 413 error, fixes file sizes
+app.config['MAX_CONTENT_LENGTH'] = 128 * 1024 *1024
 
 # Create the physical folder on your computer if it doesn't exist yet
 if not os.path.exists(UPLOAD_FOLDER):
@@ -29,6 +31,6 @@ def home():
 #checks if the file is run directly,
 # then start the flask development server
 if __name__ == "__main__":
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=5005)
 
 
