@@ -1,21 +1,20 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-# Update these credentials with your local Postgres info
+# Update: Changed dbname to serverseal_db to match your terminal success
 DB_CONFIG = {
-    "dbname": "server_seal",
+    "dbname": "serverseal_db",
     "user": "markalejo",
     "password" : "", 
     "host" : "localhost", 
     "port" : "5432"
 }
 
-
 def get_connection(): 
     return psycopg2.connect(**DB_CONFIG)
 
 def create_shipment(bol_number, origin, destination): 
-    """Insterts a shipment into Postgres and returns the UUID"""
+    """Inserts a shipment into Postgres and returns the UUID"""
     query = """
         INSERT INTO shipments (bol_number, origin, destination)
         VALUES (%s, %s, %s)
@@ -43,7 +42,7 @@ def get_all_shipments():
         conn.close()
 
 # Creating Event 
-def create_event(shiptment_id, event_type, location, hardware_details, notes, handler_id): 
+def create_event(shipment_id, event_type, location, hardware_details, notes, handler_id): 
     query = """
         INSERT INTO events (shipment_id, event_type, location, hardware_details, notes, handler_id)
         VALUES (%s, %s, %s, %s, %s, %s)
@@ -52,7 +51,7 @@ def create_event(shiptment_id, event_type, location, hardware_details, notes, ha
     conn = get_connection()
     try: 
         with conn.cursor() as cur: 
-            cur.execute(query, (shiptment_id, event_type, location, hardware_details, notes, handler_id))
+            cur.execute(query, (shipment_id, event_type, location, hardware_details, notes, handler_id))
             event_id = cur.fetchone()[0]
             conn.commit()
             return event_id
@@ -63,12 +62,12 @@ def create_event(shiptment_id, event_type, location, hardware_details, notes, ha
 def get_shipment_with_events(shipment_id):
     conn = get_connection()
     try: 
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # 1. Fetch the master shipment record
             cur.execute("SELECT * FROM shipments WHERE shipment_id = %s", (shipment_id,))
             shipment = cur.fetchone()
 
-            #2. Fetch all events that "point" to this shipment
+            # 2. Fetch all events that "point" to this shipment
             cur.execute("SELECT * FROM events WHERE shipment_id = %s ORDER BY created_at ASC", (shipment_id,))
             events = cur.fetchall()
 
@@ -79,7 +78,7 @@ def get_shipment_with_events(shipment_id):
     finally: 
         conn.close()
 
-# Here we create / send the data for the media 
+# Updated: Uses file_path to match new schema
 def create_media(event_id, media_type, file_path, latitude=None, longitude=None):
     conn = get_connection()
     cur = conn.cursor()
@@ -101,20 +100,19 @@ def create_media(event_id, media_type, file_path, latitude=None, longitude=None)
         cur.close()
         conn.close()
 
-# Here is where we fetch all the media and evnets for a shipment 
+# Updated: Correctly bundles 'file_path' into JSON response
 def get_shipment_with_history(shipment_id):
     conn = get_connection()
     try: 
         with conn.cursor(cursor_factory=RealDictCursor) as cur: 
-            #1. Get the Master Shipment Data
+            # 1. Get the Master Shipment Data
             cur.execute("SELECT * FROM shipments WHERE shipment_id = %s", (shipment_id,))
             shipment = cur.fetchone()
 
             if not shipment: 
                 return None
             
-            # 2. Get all Evnets and their associated Media 
-            # We use a subquery to bundle media into a JSON array for each event 
+            # 2. Get all Events and their associated Media 
             query = """
                 SELECT
                     e.*, 
@@ -123,7 +121,7 @@ def get_shipment_with_history(shipment_id):
                             json_build_object(
                                 'media_id', m.media_id, 
                                 'type', m.media_type, 
-                                'url', m.file_url, 
+                                'path', m.file_path,   -- Corrected to file_path
                                 'lat', m.latitude, 
                                 'lon', m.longitude
                             )
