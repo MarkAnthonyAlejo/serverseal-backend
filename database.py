@@ -80,20 +80,25 @@ def get_shipment_with_events(shipment_id):
         conn.close()
 
 # Here we create / send the data for the media 
-def create_media(event_id, media_type, file_url, latitude=None, longitude=None):
-    query = """
-        INSERT INTO media (event_id, media_type, file_url, latitude, longitude)
-        VALUES (%s, %s, %s, %s, %s)
-        RETURNING media_id; 
-    """
+def create_media(event_id, media_type, file_path, latitude=None, longitude=None):
     conn = get_connection()
+    cur = conn.cursor()
     try: 
-        with conn.cursor() as cur: 
-            cur.execute(query, (event_id, media_type, file_url, latitude, longitude))
-            media_id = cur.fetchone()[0]
-            conn.commit()
-            return media_id
+        query = """
+                INSERT INTO media (event_id, media_type, file_path, latitude, longitude)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING media_id;
+        """
+        cur.execute(query, (event_id, media_type, file_path, latitude, longitude))
+        media_id = cur.fetchone()[0]
+        conn.commit()
+        return media_id
+    except Exception as e: 
+        conn.rollback()
+        print(f"Database error: {e}")
+        raise e 
     finally: 
+        cur.close()
         conn.close()
 
 # Here is where we fetch all the media and evnets for a shipment 
