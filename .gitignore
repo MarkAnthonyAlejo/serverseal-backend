@@ -20,3 +20,9 @@ venv/
 
 # Compiled C extensions (if any)
 *.so
+
+# Local storage - ignore all uploaded media 
+uploads/*
+
+# Exepction: allow Git to track the folder itself if we add a .gitkeep
+!uploads/.gitkeep

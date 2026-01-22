@@ -1,17 +1,32 @@
+import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+
+# Tell python to find and read the .env file 
+load_dotenv()
+
+# --- ADD THIS LINE FOR TESTING ---
+print(f"DEBUG CHECK: The DB_NAME from .env is: '{os.getenv('DB_NAME')}'")
+# ---------------------------------
 
 # Update: Changed dbname to serverseal_db to match your terminal success
 DB_CONFIG = {
-    "dbname": "serverseal_db",
-    "user": "markalejo",
-    "password" : "", 
-    "host" : "localhost", 
-    "port" : "5432"
+    "dbname": os.getenv("DB_NAME"),
+    "user": os.getenv("DB_USER"),
+    "password" : os.getenv("DB_PASSWORD"), 
+    "host" : os.getenv("DB_HOST"), 
+    "port" : os.getenv("DB_PORT")
 }
 
 def get_connection(): 
-    return psycopg2.connect(**DB_CONFIG)
+    try: 
+        # Now it uses the .env values automatically 
+        conn = psycopg2.connect(**DB_CONFIG)
+        return conn
+    except Exception as e: 
+        print(f"Database connection failed: {e}")
+        return None
 
 def create_shipment(bol_number, origin, destination): 
     """Inserts a shipment into Postgres and returns the UUID"""
