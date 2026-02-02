@@ -27,6 +27,8 @@ def add_shipment():
 def list_shipments():
     try:
         shipments = database.get_all_shipments()
+        if shipments is None:
+            return jsonify({"error": "Database is currently unavailable"}), 503
         return jsonify(shipments), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
