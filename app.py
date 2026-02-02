@@ -1,20 +1,23 @@
-#import flask into the app
+# import flask into the app
 import os
 from werkzeug.utils import secure_filename
 from flask import Flask
 from routes import main_bp
 
-# Define where files will be stored and what types are allowed 
+# Define where files will be stored and what types are allowed
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
 # Creates an instance of the flask app
 app = Flask(__name__)
 
-# Configure the app to use that folder 
+# Configure the app to use that folder
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+app.config['ALLOWED_EXTENSIONS'] = ALLOWED_EXTENSIONS
+
 # This line fixes 413 error, fixes file sizes
-app.config['MAX_CONTENT_LENGTH'] = 128 * 1024 *1024
+app.config['MAX_CONTENT_LENGTH'] = 128 * 1024 * 1024
 
 # Create the physical folder on your computer if it doesn't exist yet
 if not os.path.exists(UPLOAD_FOLDER):
@@ -24,13 +27,14 @@ if not os.path.exists(UPLOAD_FOLDER):
 app.register_blueprint(main_bp)
 
 # and link it to the function below
+
+
 @app.route("/")
-def home(): 
+def home():
     return "ServerSeal backend is running"
 
-#checks if the file is run directly,
+
+# checks if the file is run directly,
 # then start the flask development server
 if __name__ == "__main__":
     app.run(debug=True, port=5005)
-
-
