@@ -86,7 +86,7 @@ def add_media():
     file = request.files['file']
 
     if file and not allowed_file(file.filename):
-        return jsonify({"error": "File type not allowed. Please uplaod png, jpg, jpeg, or gif."}), 400
+        return jsonify({"error": "File type not allowed. Please upload png, jpg, jpeg, or gif."}), 400
 
     event_id = request.form.get('event_id')
     media_type = request.form.get('media_type', 'image')
