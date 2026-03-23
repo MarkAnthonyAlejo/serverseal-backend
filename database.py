@@ -6,9 +6,6 @@ from dotenv import load_dotenv
 # Tell python to find and read the .env file
 load_dotenv()
 
-# --- ADD THIS LINE FOR TESTING ---
-print(f"DEBUG CHECK: The DB_NAME from .env is: '{os.getenv('DB_NAME')}'")
-# ---------------------------------
 
 # Update: Changed dbname to serverseal_db to match your terminal success
 DB_CONFIG = {
@@ -83,29 +80,27 @@ def create_event(shipment_id, event_type, location, hardware_details, notes, han
     finally:
         conn.close()
 
-# Gets Specific shipment for all created events
 
-
-def get_shipment_with_events(shipment_id):
+def update_shipment_status(shipment_id, new_status):
+    valid_statuses = {'Pending', 'Sealed', 'In Transit', 'Delivered'}
+    if new_status not in valid_statuses:
+        raise ValueError(f"Invalid status: {new_status}")
+    query = """
+        UPDATE shipments
+        SET status = %s, updated_at = CURRENT_TIMESTAMP
+        WHERE shipment_id = %s
+        RETURNING shipment_id, status;
+    """
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # 1. Fetch the master shipment record
-            cur.execute(
-                "SELECT * FROM shipments WHERE shipment_id = %s", (shipment_id,))
-            shipment = cur.fetchone()
-
-            # 2. Fetch all events that "point" to this shipment
-            cur.execute(
-                "SELECT * FROM events WHERE shipment_id = %s ORDER BY created_at ASC", (shipment_id,))
-            events = cur.fetchall()
-
-            return {
-                "shipment": shipment,
-                "history": events
-            }
+            cur.execute(query, (new_status, shipment_id))
+            result = cur.fetchone()
+            conn.commit()
+            return result
     finally:
         conn.close()
+
 
 # Updated: Uses file_path to match new schema
 
@@ -166,7 +161,7 @@ def get_shipment_with_history(shipment_id):
                 LEFT JOIN media m ON e.event_id = m.event_id
                 WHERE e.shipment_id = %s 
                 GROUP BY e.event_id
-                ORDER BY e.created_at DESC;
+                ORDER BY e.created_at ASC;
             """
             cur.execute(query, (shipment_id,))
             events = cur.fetchall()

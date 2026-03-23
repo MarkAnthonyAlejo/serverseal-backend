@@ -52,6 +52,23 @@ def add_events():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@main_bp.route("/api/shipments/<uuid:shipment_id>/status", methods=["PATCH"])
+def update_status(shipment_id):
+    data = request.json
+    new_status = data.get('status') if data else None
+    if not new_status:
+        return jsonify({"error": "Missing 'status' field"}), 400
+    try:
+        result = database.update_shipment_status(str(shipment_id), new_status)
+        if not result:
+            return jsonify({"error": "Shipment not found"}), 404
+        return jsonify(result), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # -- "Full Story" (History of events) of specific shipment
 
 

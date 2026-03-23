@@ -1,7 +1,7 @@
 # import flask into the app
 import os
 from werkzeug.utils import secure_filename
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from routes import main_bp
 
@@ -25,6 +25,11 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 # Connect the routes from routes.py to this app
 app.register_blueprint(main_bp)
+
+
+@app.route('/uploads/<path:filename>')
+def serve_upload(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
 
 
 @app.route("/")
