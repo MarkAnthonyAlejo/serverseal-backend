@@ -29,16 +29,18 @@ def get_connection():
 
 def create_shipment(bol_number, origin, destination):
     """Inserts a shipment into Postgres and returns the UUID"""
-    query = """
-        INSERT INTO shipments (bol_number, origin, destination)
-        VALUES (%s, %s, %s)
-        RETURNING shipment_id;        
-    """
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(query, (bol_number, origin, destination))
+            cur.execute(
+                "INSERT INTO shipments (bol_number, origin, destination) VALUES (%s, %s, %s) RETURNING shipment_id;",
+                (bol_number, origin, destination)
+            )
             shipment_id = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO status_history (shipment_id, status) VALUES (%s, 'Pending');",
+                (shipment_id,)
+            )
             conn.commit()
             return shipment_id
     finally:
@@ -96,6 +98,10 @@ def update_shipment_status(shipment_id, new_status):
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(query, (new_status, shipment_id))
             result = cur.fetchone()
+            cur.execute(
+                "INSERT INTO status_history (shipment_id, status) VALUES (%s, %s);",
+                (shipment_id, new_status)
+            )
             conn.commit()
             return result
     finally:
@@ -209,9 +215,16 @@ def get_shipment_with_history(shipment_id):
             cur.execute(query, (shipment_id,))
             events = cur.fetchall()
 
+            cur.execute(
+                "SELECT history_id, shipment_id, status, changed_at FROM status_history WHERE shipment_id = %s ORDER BY changed_at ASC;",
+                (shipment_id,)
+            )
+            status_history = cur.fetchall()
+
             return {
                 "shipment": shipment,
-                "history": events
+                "history": events,
+                "status_history": status_history
             }
     finally:
         conn.close()

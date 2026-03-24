@@ -26,8 +26,15 @@ CREATE TABLE IF NOT EXISTS media (
     event_id UUID REFERENCES events(event_id) ON DELETE CASCADE, -- The Pointer to the Event
     media_type VARCHAR(20) NOT NULL, -- 'image' or 'video'
     file_path TEXT NOT NULL, -- Where the file is stored (e.g., S3 or local)
-    captured_at TIMESTAMP WITH TIME ZONE, -- From the photo's EXIF data 
-    latitude DECIMAL(9,6), 
-    longitude DECIMAL(9,6), 
+    captured_at TIMESTAMP WITH TIME ZONE, -- From the photo's EXIF data
+    latitude DECIMAL(9,6),
+    longitude DECIMAL(9,6),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS status_history (
+    history_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shipment_id UUID REFERENCES shipments(shipment_id) ON DELETE CASCADE,
+    status VARCHAR(50) NOT NULL,
+    changed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
