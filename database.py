@@ -130,6 +130,49 @@ def create_media(event_id, media_type, file_path, latitude=None, longitude=None)
 # Updated: Correctly bundles 'file_path' into JSON response
 
 
+def get_active_shipments():
+    """Returns In Transit shipments with last event info bundled in."""
+    query = """
+        SELECT
+            s.*,
+            COUNT(e.event_id) AS event_count,
+            MAX(e.created_at) AS last_event_at,
+            (
+                SELECT event_type FROM events
+                WHERE shipment_id = s.shipment_id
+                ORDER BY created_at DESC LIMIT 1
+            ) AS last_event_type
+        FROM shipments s
+        LEFT JOIN events e ON s.shipment_id = e.shipment_id
+        WHERE s.status = 'In Transit'
+        GROUP BY s.shipment_id
+        ORDER BY s.updated_at DESC;
+    """
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query)
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def get_shipment_by_bol(bol_number):
+    """Finds a shipment by its BOL number. Used by the cargo scanner."""
+    query = "SELECT * FROM shipments WHERE bol_number = %s;"
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (bol_number,))
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+
 def get_shipment_with_history(shipment_id):
     conn = get_connection()
     try:

@@ -69,6 +69,32 @@ def update_status(shipment_id):
         return jsonify({"error": str(e)}), 500
 
 
+# -- Active (In Transit) shipments for the Active Logs page
+
+@main_bp.route("/api/shipments/active", methods=["GET"])
+def list_active_shipments():
+    try:
+        shipments = database.get_active_shipments()
+        if shipments is None:
+            return jsonify({"error": "Database is currently unavailable"}), 503
+        return jsonify(shipments), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# -- BOL number lookup for the Scan Cargo page
+
+@main_bp.route("/api/shipments/bol/<string:bol_number>", methods=["GET"])
+def get_shipment_by_bol(bol_number):
+    try:
+        shipment = database.get_shipment_by_bol(bol_number)
+        if not shipment:
+            return jsonify({"error": f"No shipment found for BOL: {bol_number}"}), 404
+        return jsonify(shipment), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # -- "Full Story" (History of events) of specific shipment
 
 
