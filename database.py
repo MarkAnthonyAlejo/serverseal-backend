@@ -179,6 +179,86 @@ def get_shipment_by_bol(bol_number):
         conn.close()
 
 
+# --- USER FUNCTIONS ---
+
+def get_user_count():
+    """Returns total number of users — used for bootstrap check."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM users;")
+            return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def create_user(email, password_hash, role):
+    """Inserts a new user and returns the UUID."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (email, password_hash, role) VALUES (%s, %s, %s) RETURNING user_id;",
+                (email, password_hash, role)
+            )
+            user_id = cur.fetchone()[0]
+            conn.commit()
+            return user_id
+    finally:
+        conn.close()
+
+
+def get_user_by_email(email):
+    """Finds a user by email. Used for login."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM users WHERE email = %s;", (email,))
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def get_all_users():
+    """Returns all users (excluding password hashes) for the admin user list."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT user_id, email, role, created_at FROM users ORDER BY created_at ASC;"
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def delete_user(user_id):
+    """Deletes a user by ID. Returns True if deleted, False if not found."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM users WHERE user_id = %s RETURNING user_id;", (user_id,))
+            deleted = cur.fetchone()
+            conn.commit()
+            return deleted is not None
+    finally:
+        conn.close()
+
+
+def get_user_by_id(user_id):
+    """Fetches a user by ID, excluding the password hash."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT user_id, email, role, created_at FROM users WHERE user_id = %s;",
+                (user_id,)
+            )
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+
 def get_shipment_with_history(shipment_id):
     conn = get_connection()
     try:

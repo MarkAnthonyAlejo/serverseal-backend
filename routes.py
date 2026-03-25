@@ -1,15 +1,128 @@
 import os
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, g
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 import database
+import auth
 
 # This Blueprint will hold every route in our app
 main_bp = Blueprint('main_bp', __name__)
 
+
+# --- AUTH ROUTES ---
+
+@main_bp.route('/api/auth/register', methods=['POST'])
+def register():
+    data = request.json or {}
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+    role = data.get('role', 'Driver')
+
+    if not email or not password:
+        return jsonify({'error': 'EMAIL_AND_PASSWORD_REQUIRED'}), 400
+
+    if role not in ('Admin', 'Driver', 'Client'):
+        return jsonify({'error': 'INVALID_ROLE'}), 400
+
+    # Bootstrap check: if users exist, only an Admin may register new users
+    user_count = database.get_user_count()
+    if user_count > 0:
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'AUTH_REQUIRED'}), 401
+        try:
+            payload = auth.decode_token(auth_header[7:])
+            if payload['role'] != 'Admin':
+                return jsonify({'error': 'ADMIN_ONLY'}), 403
+        except Exception:
+            return jsonify({'error': 'TOKEN_INVALID'}), 401
+
+    password_hash = generate_password_hash(password, method='pbkdf2:sha256')
+    try:
+        user_id = database.create_user(email, password_hash, role)
+        return jsonify({'user_id': str(user_id), 'status': 'success'}), 201
+    except Exception as e:
+        if 'unique' in str(e).lower():
+            return jsonify({'error': 'EMAIL_ALREADY_EXISTS'}), 409
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/auth/login', methods=['POST'])
+def login():
+    data = request.json or {}
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+
+    if not email or not password:
+        return jsonify({'error': 'EMAIL_AND_PASSWORD_REQUIRED'}), 400
+
+    user = database.get_user_by_email(email)
+    if not user or not check_password_hash(user['password_hash'], password):
+        return jsonify({'error': 'INVALID_CREDENTIALS'}), 401
+
+    token = auth.create_token(str(user['user_id']), user['role'])
+    return jsonify({
+        'token': token,
+        'user': {
+            'user_id': str(user['user_id']),
+            'email': user['email'],
+            'role': user['role'],
+        }
+    }), 200
+
+
+@main_bp.route('/api/auth/me', methods=['GET'])
+@auth.require_auth
+def get_me():
+    user = database.get_user_by_id(g.current_user['user_id'])
+    if not user:
+        return jsonify({'error': 'USER_NOT_FOUND'}), 404
+    return jsonify({
+        'user_id': str(user['user_id']),
+        'email': user['email'],
+        'role': user['role'],
+    }), 200
+
+
+# --- USER MANAGEMENT ROUTES ---
+
+@main_bp.route('/api/users', methods=['GET'])
+@auth.require_auth
+@auth.require_role('Admin')
+def list_users():
+    try:
+        users = database.get_all_users()
+        return jsonify([{
+            'user_id': str(u['user_id']),
+            'email': u['email'],
+            'role': u['role'],
+            'created_at': u['created_at'].isoformat() if u['created_at'] else None,
+        } for u in users]), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/users/<uuid:user_id>', methods=['DELETE'])
+@auth.require_auth
+@auth.require_role('Admin')
+def delete_user(user_id):
+    # Prevent Admin from deleting themselves
+    if str(user_id) == g.current_user['user_id']:
+        return jsonify({'error': 'CANNOT_DELETE_SELF'}), 400
+    try:
+        deleted = database.delete_user(str(user_id))
+        if not deleted:
+            return jsonify({'error': 'USER_NOT_FOUND'}), 404
+        return jsonify({'status': 'success'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # --- SHIPMENT ROUTES ---
 
-
 @main_bp.route("/api/shipments", methods=["POST"])
+@auth.require_auth
+@auth.require_role('Admin', 'Driver')
 def add_shipment():
     data = request.json
     try:
@@ -24,6 +137,7 @@ def add_shipment():
 
 
 @main_bp.route("/api/shipments", methods=["GET"])
+@auth.require_auth
 def list_shipments():
     try:
         shipments = database.get_all_shipments()
@@ -33,10 +147,12 @@ def list_shipments():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# --- EVENT ROUTES (Condition Reporting) ---
 
+# --- EVENT ROUTES ---
 
 @main_bp.route("/api/events", methods=["POST"])
+@auth.require_auth
+@auth.require_role('Admin', 'Driver')
 def add_events():
     data = request.json
     try:
@@ -46,13 +162,17 @@ def add_events():
             data.get('location'),
             data.get('hardware_details'),
             data.get('notes'),
-            data.get('handler_id')
+            # handler_id comes from the authenticated user, not the request body
+            g.current_user['user_id'],
         )
         return jsonify({"event_id": str(new_event_id), "status": "success"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 @main_bp.route("/api/shipments/<uuid:shipment_id>/status", methods=["PATCH"])
+@auth.require_auth
+@auth.require_role('Admin', 'Driver')
 def update_status(shipment_id):
     data = request.json
     new_status = data.get('status') if data else None
@@ -69,9 +189,8 @@ def update_status(shipment_id):
         return jsonify({"error": str(e)}), 500
 
 
-# -- Active (In Transit) shipments for the Active Logs page
-
 @main_bp.route("/api/shipments/active", methods=["GET"])
+@auth.require_auth
 def list_active_shipments():
     try:
         shipments = database.get_active_shipments()
@@ -82,9 +201,8 @@ def list_active_shipments():
         return jsonify({"error": str(e)}), 500
 
 
-# -- BOL number lookup for the Scan Cargo page
-
 @main_bp.route("/api/shipments/bol/<string:bol_number>", methods=["GET"])
+@auth.require_auth
 def get_shipment_by_bol(bol_number):
     try:
         shipment = database.get_shipment_by_bol(bol_number)
@@ -95,10 +213,8 @@ def get_shipment_by_bol(bol_number):
         return jsonify({"error": str(e)}), 500
 
 
-# -- "Full Story" (History of events) of specific shipment
-
-
 @main_bp.route("/api/shipments/<uuid:shipment_id>", methods=["GET"])
+@auth.require_auth
 def get_full_shipment(shipment_id):
     try:
         data = database.get_shipment_with_history(str(shipment_id))
@@ -108,20 +224,19 @@ def get_full_shipment(shipment_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Security Check of file upload
 
+# --- MEDIA UPLOAD ROUTE ---
 
 def allowed_file(filename):
-    # This looks for a '.' and checks if the text after it is in your ALLOWED_EXTENSIONS
     allowed = current_app.config.get(
         'ALLOWED_EXTENSIONS', {'png', 'jpg', 'jpeg', 'gif'})
     return '.' in filename and \
         filename.rsplit('.', 1)[1].lower() in allowed
 
-# --- MEDIA UPLOAD ROUTE ---
-
 
 @main_bp.route('/api/media/upload', methods=['POST'])
+@auth.require_auth
+@auth.require_role('Admin', 'Driver')
 def add_media():
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
@@ -141,13 +256,9 @@ def add_media():
 
     if file and event_id:
         filename = secure_filename(file.filename)
-        # Using current_app.config to find the 'uploads' folder dynamically
         file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-
         file.save(file_path)
-
         try:
-            # Fixed: Changed 'db' to 'database' to match your import
             media_id = database.create_media(
                 event_id=event_id,
                 media_type=media_type,
