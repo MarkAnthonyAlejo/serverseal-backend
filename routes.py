@@ -21,7 +21,7 @@ def register():
     if not email or not password:
         return jsonify({'error': 'EMAIL_AND_PASSWORD_REQUIRED'}), 400
 
-    if role not in ('Admin', 'Driver', 'Client'):
+    if role not in ('Admin', 'Driver', 'Client', 'QA Inspector'):
         return jsonify({'error': 'INVALID_ROLE'}), 400
 
     # Bootstrap check: if users exist, only an Admin may register new users
@@ -140,7 +140,8 @@ def add_shipment():
 @auth.require_auth
 def list_shipments():
     try:
-        shipments = database.get_all_shipments()
+        qa_filter = g.current_user['user_id'] if g.current_user['role'] == 'QA Inspector' else None
+        shipments = database.get_all_shipments(assigned_qa_id=qa_filter)
         if shipments is None:
             return jsonify({"error": "Database is currently unavailable"}), 503
         return jsonify(shipments), 200
@@ -152,7 +153,7 @@ def list_shipments():
 
 @main_bp.route("/api/events", methods=["POST"])
 @auth.require_auth
-@auth.require_role('Admin', 'Driver')
+@auth.require_role('Admin', 'Driver', 'QA Inspector')
 def add_events():
     data = request.json
     try:
@@ -236,7 +237,7 @@ def allowed_file(filename):
 
 @main_bp.route('/api/media/upload', methods=['POST'])
 @auth.require_auth
-@auth.require_role('Admin', 'Driver')
+@auth.require_role('Admin', 'Driver', 'QA Inspector')
 def add_media():
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
@@ -275,3 +276,154 @@ def add_media():
             return jsonify({"error": str(e)}), 500
 
     return jsonify({"error": "Missing event_id"}), 400
+
+
+# --- QA ROUTES ---
+
+@main_bp.route('/api/users/qa', methods=['GET'])
+@auth.require_auth
+@auth.require_role('Admin')
+def list_qa_users():
+    """Returns all QA Inspector users for the assignment dropdown."""
+    try:
+        users = database.get_qa_users()
+        return jsonify([{'user_id': str(u['user_id']), 'email': u['email']} for u in users]), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/shipments/<uuid:shipment_id>/inspection', methods=['POST'])
+@auth.require_auth
+@auth.require_role('Admin')
+def assign_qa_inspector(shipment_id):
+    """Admin assigns a QA Inspector to a shipment."""
+    data = request.json or {}
+    qa_user_id = data.get('qa_user_id')
+    if not qa_user_id:
+        return jsonify({'error': 'QA_USER_ID_REQUIRED'}), 400
+    try:
+        inspection_id = database.assign_qa_to_shipment(
+            str(shipment_id), qa_user_id, g.current_user['user_id']
+        )
+        return jsonify({'inspection_id': inspection_id, 'status': 'success'}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/shipments/<uuid:shipment_id>/inspection', methods=['GET'])
+@auth.require_auth
+def get_inspection(shipment_id):
+    """Returns the QA inspection record and checklist for a shipment."""
+    try:
+        inspection = database.get_inspection_by_shipment(str(shipment_id))
+        if not inspection:
+            return jsonify({'error': 'INSPECTION_NOT_FOUND'}), 404
+        return jsonify(inspection), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/shipments/<uuid:shipment_id>/inspection/start', methods=['PATCH'])
+@auth.require_auth
+@auth.require_role('QA Inspector')
+def start_inspection(shipment_id):
+    """QA Inspector starts the inspection."""
+    try:
+        inspection = database.get_inspection_by_shipment(str(shipment_id))
+        if not inspection:
+            return jsonify({'error': 'INSPECTION_NOT_FOUND'}), 404
+        if inspection['assigned_qa_id'] != g.current_user['user_id']:
+            return jsonify({'error': 'FORBIDDEN'}), 403
+        database.start_inspection(inspection['inspection_id'], str(shipment_id))
+        return jsonify({'status': 'success'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/shipments/<uuid:shipment_id>/inspection/items', methods=['POST'])
+@auth.require_auth
+@auth.require_role('QA Inspector')
+def add_inspection_item(shipment_id):
+    """QA Inspector adds a hardware unit to the checklist."""
+    data = request.json or {}
+    try:
+        inspection = database.get_inspection_by_shipment(str(shipment_id))
+        if not inspection:
+            return jsonify({'error': 'INSPECTION_NOT_FOUND'}), 404
+        if inspection['assigned_qa_id'] != g.current_user['user_id']:
+            return jsonify({'error': 'FORBIDDEN'}), 403
+        item_id = database.add_checklist_item(
+            inspection['inspection_id'],
+            data.get('manufacturer'),
+            data.get('model'),
+            data.get('serial_number'),
+            data.get('quantity', 1),
+            data.get('visual_condition'),
+            data.get('packaging_condition'),
+            data.get('damage_notes'),
+            data.get('disposition'),
+        )
+        return jsonify({'item_id': item_id, 'status': 'success'}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/shipments/<uuid:shipment_id>/inspection/items/<uuid:item_id>', methods=['DELETE'])
+@auth.require_auth
+@auth.require_role('QA Inspector')
+def delete_inspection_item(shipment_id, item_id):
+    """QA Inspector removes a checklist item."""
+    try:
+        deleted = database.delete_checklist_item(str(item_id))
+        if not deleted:
+            return jsonify({'error': 'ITEM_NOT_FOUND'}), 404
+        return jsonify({'status': 'success'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/shipments/<uuid:shipment_id>/inspection/submit', methods=['PATCH'])
+@auth.require_auth
+@auth.require_role('QA Inspector')
+def submit_inspection(shipment_id):
+    """QA Inspector submits the completed inspection."""
+    data = request.json or {}
+    overall_disposition = data.get('overall_disposition')
+    if not overall_disposition:
+        return jsonify({'error': 'OVERALL_DISPOSITION_REQUIRED'}), 400
+    if overall_disposition not in ('Pass', 'Fail', 'QA Hold', 'Conditional'):
+        return jsonify({'error': 'INVALID_DISPOSITION'}), 400
+    try:
+        inspection = database.get_inspection_by_shipment(str(shipment_id))
+        if not inspection:
+            return jsonify({'error': 'INSPECTION_NOT_FOUND'}), 404
+        if inspection['assigned_qa_id'] != g.current_user['user_id']:
+            return jsonify({'error': 'FORBIDDEN'}), 403
+        new_status = database.submit_inspection(
+            inspection['inspection_id'], str(shipment_id),
+            overall_disposition, data.get('notes', '')
+        )
+        return jsonify({'status': 'success', 'shipment_status': new_status}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/shipments/<uuid:shipment_id>/inspection/resolve', methods=['PATCH'])
+@auth.require_auth
+@auth.require_role('Admin')
+def resolve_qa_hold(shipment_id):
+    """Admin resolves a QA Hold — approve override or send back to QA."""
+    data = request.json or {}
+    action = data.get('action')
+    if action not in ('approve', 'reinspect'):
+        return jsonify({'error': 'INVALID_ACTION'}), 400
+    try:
+        inspection = database.get_inspection_by_shipment(str(shipment_id))
+        if not inspection:
+            return jsonify({'error': 'INSPECTION_NOT_FOUND'}), 404
+        new_status = database.resolve_qa_hold(
+            inspection['inspection_id'], str(shipment_id), action
+        )
+        return jsonify({'status': 'success', 'shipment_status': new_status}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
