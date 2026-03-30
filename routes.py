@@ -1,9 +1,10 @@
 import os
-from flask import Blueprint, jsonify, request, current_app, g
+from flask import Blueprint, jsonify, request, current_app, g, Response
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 import database
 import auth
+import pdf_generator
 
 # This Blueprint will hold every route in our app
 main_bp = Blueprint('main_bp', __name__)
@@ -276,6 +277,33 @@ def add_media():
             return jsonify({"error": str(e)}), 500
 
     return jsonify({"error": "Missing event_id"}), 400
+
+
+# --- PDF REPORT ROUTE ---
+
+@main_bp.route('/api/shipments/<uuid:shipment_id>/report', methods=['GET'])
+@auth.require_auth
+def download_report(shipment_id):
+    """Generates and returns a PDF chain-of-custody report for a shipment."""
+    try:
+        shipment_data = database.get_shipment_with_history(str(shipment_id))
+        if not shipment_data:
+            return jsonify({'error': 'Shipment not found'}), 404
+
+        inspection_data = database.get_inspection_by_shipment(str(shipment_id))
+
+        pdf_bytes = pdf_generator.generate_report(shipment_data, inspection_data)
+
+        bol = shipment_data['shipment'].get('bol_number', str(shipment_id))
+        filename = f"serverseal_{bol}_report.pdf".replace(' ', '_')
+
+        return Response(
+            pdf_bytes,
+            mimetype='application/pdf',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # --- QA ROUTES ---
