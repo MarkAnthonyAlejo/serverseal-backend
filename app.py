@@ -1,9 +1,12 @@
 # import flask into the app
 import os
+from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from routes import main_bp
+
+load_dotenv()
 
 # Creates an instance of the flask app
 app = Flask(__name__)

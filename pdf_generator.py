@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 from weasyprint import HTML
 from PIL import Image
+import qrcode
 
 
 def _encode_image(file_path: str, max_width: int = 800) -> str | None:
@@ -32,6 +33,19 @@ def _fmt(ts: str | None) -> str:
         return str(ts)
 
 
+def _generate_qr_dataurl(shipment_id: str) -> str:
+    """Generate a QR code encoding the shipment URL and return as a base64 PNG data URL."""
+    app_url = os.environ.get('APP_URL', 'http://localhost:5173')
+    url = f"{app_url}/shipments/{shipment_id}"
+    qr = qrcode.QRCode(version=1, box_size=5, border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+    buffer = io.BytesIO()
+    img.save(buffer, format='PNG')
+    return 'data:image/png;base64,' + base64.b64encode(buffer.getvalue()).decode()
+
+
 def _disposition_color(d: str | None) -> str:
     if not d:
         return '#666'
@@ -51,6 +65,7 @@ def generate_report(shipment_data: dict, inspection_data: dict | None) -> bytes:
     events         = shipment_data['history']
     status_history = shipment_data['status_history']
     generated_at   = datetime.now(timezone.utc).strftime('%b %d, %Y  %I:%M %p UTC')
+    qr_dataurl     = _generate_qr_dataurl(str(shipment.get('shipment_id', '')))
 
     # ── Status timeline rows ─────────────────────────────────────────
     timeline_rows = ''.join(
@@ -401,7 +416,13 @@ def generate_report(shipment_data: dict, inspection_data: dict | None) -> bytes:
       {shipment.get("origin", "")} &nbsp;›&nbsp; {shipment.get("destination", "")}
     </div>
   </div>
-  <div class="status-badge">{shipment.get("status", "").upper().replace(" ", "_")}</div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="status-badge">{shipment.get("status", "").upper().replace(" ", "_")}</div>
+    <div style="text-align:center">
+      <img src="{qr_dataurl}" style="width:64px;height:64px;display:block;border:1px solid #ddd" />
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:6px;color:#999;letter-spacing:0.1em;margin-top:2px">SCAN_TO_VIEW</div>
+    </div>
+  </div>
 </div>
 
 <!-- Content -->

@@ -1,7 +1,9 @@
+import io
 import os
 from flask import Blueprint, jsonify, request, current_app, g, Response
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
+import qrcode
 import database
 import auth
 import pdf_generator
@@ -304,6 +306,28 @@ def download_report(shipment_id):
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# --- QR CODE ROUTE ---
+
+@main_bp.route('/api/shipments/<uuid:shipment_id>/qr', methods=['GET'])
+@auth.require_auth
+def get_shipment_qr(shipment_id):
+    """Returns a QR code PNG encoding the shipment's URL."""
+    app_url = os.environ.get('APP_URL', 'http://localhost:5173')
+    url = f"{app_url}/shipments/{shipment_id}"
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+    buffer = io.BytesIO()
+    img.save(buffer, format='PNG')
+    buffer.seek(0)
+    return Response(
+        buffer.getvalue(),
+        mimetype='image/png',
+        headers={'Cache-Control': 'public, max-age=3600'}
+    )
 
 
 # --- QA ROUTES ---
