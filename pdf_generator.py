@@ -145,8 +145,11 @@ def generate_report(shipment_data: dict, inspection_data: dict | None) -> bytes:
     # ── Event log ────────────────────────────────────────────────────
     event_blocks = []
     for idx, event in enumerate(events):
+        all_media = event.get('evidence_photos') or []
+        signatures = [p for p in all_media if p.get('type') == 'signature']
+        photos = [p for p in all_media if p.get('type') != 'signature']
+
         photos_html = ''
-        photos = event.get('evidence_photos') or []
         encoded = []
         for p in photos:
             src = _encode_image(p.get('path', ''))
@@ -154,6 +157,16 @@ def generate_report(shipment_data: dict, inspection_data: dict | None) -> bytes:
                 encoded.append(f'<img src="{src}" class="photo" />')
         if encoded:
             photos_html = f'<div class="photo-grid">{"".join(encoded)}</div>'
+
+        sig_html = ''
+        if signatures:
+            sig_src = _encode_image(signatures[0].get('path', ''))
+            if sig_src:
+                sig_html = f'''
+                <div class="signature-block">
+                  <div class="subsection-label" style="margin-bottom:6px">DELIVERY_SIGNATURE</div>
+                  <img src="{sig_src}" class="signature-img" />
+                </div>'''
 
         event_blocks.append(f'''
         <div class="event-card {"page-break-before" if idx > 0 and idx % 4 == 0 else ""}">
@@ -166,6 +179,7 @@ def generate_report(shipment_data: dict, inspection_data: dict | None) -> bytes:
             {"<span class='meta-item'><span class='meta-label'>HARDWARE</span> " + str(event.get("hardware_details") or "") + "</span>" if event.get("hardware_details") else ""}
           </div>
           {"<p class='event-notes mono muted small'>" + str(event.get("notes") or "") + "</p>" if event.get("notes") else ""}
+          {sig_html}
           {photos_html}
         </div>
         ''')
@@ -364,6 +378,19 @@ def generate_report(shipment_data: dict, inspection_data: dict | None) -> bytes:
     height: 135px;
     object-fit: cover;
     border: 1px solid #e0e0e0;
+  }}
+
+  /* ── Signature ── */
+  .signature-block {{
+    margin-top: 10px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    display: inline-block;
+  }}
+  .signature-img {{
+    height: 60px;
+    width: auto;
+    display: block;
   }}
 
   /* ── Footer ── */
