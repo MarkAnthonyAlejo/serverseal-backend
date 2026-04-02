@@ -467,6 +467,106 @@ def resolve_qa_hold(inspection_id, shipment_id, action):
         conn.close()
 
 
+def get_shipment_simple(shipment_id):
+    """Fetches bol_number and status for a shipment — lightweight lookup for notifications."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT shipment_id, bol_number, status FROM shipments WHERE shipment_id = %s;",
+                (shipment_id,)
+            )
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+
+# --- NOTIFICATION FUNCTIONS ---
+
+def get_user_ids_by_roles(roles):
+    """Returns list of user_ids for all users matching any of the given roles."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT user_id FROM users WHERE role = ANY(%s);",
+                (list(roles),)
+            )
+            return [str(row[0]) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def create_notifications(user_ids, shipment_id, notif_type, message):
+    """Bulk-inserts one notification row per user_id."""
+    if not user_ids:
+        return
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            for user_id in user_ids:
+                cur.execute(
+                    """INSERT INTO notifications (user_id, shipment_id, type, message)
+                       VALUES (%s, %s, %s, %s);""",
+                    (user_id, shipment_id, notif_type, message)
+                )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def get_notifications(user_id):
+    """Returns all notifications for a user, newest first (max 100)."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT n.notification_id, n.user_id, n.shipment_id, n.type,
+                          n.message, n.is_read, n.created_at, s.bol_number
+                   FROM notifications n
+                   LEFT JOIN shipments s ON n.shipment_id = s.shipment_id
+                   WHERE n.user_id = %s
+                   ORDER BY n.created_at DESC
+                   LIMIT 100;""",
+                (user_id,)
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def mark_notification_read(notification_id, user_id):
+    """Marks a single notification as read. Scoped to user_id to prevent cross-user access."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE notifications SET is_read = TRUE
+                   WHERE notification_id = %s AND user_id = %s
+                   RETURNING notification_id;""",
+                (notification_id, user_id)
+            )
+            updated = cur.fetchone()
+            conn.commit()
+            return updated is not None
+    finally:
+        conn.close()
+
+
+def mark_all_notifications_read(user_id):
+    """Marks all notifications for a user as read."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE notifications SET is_read = TRUE WHERE user_id = %s;",
+                (user_id,)
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
 def get_shipment_with_history(shipment_id):
     conn = get_connection()
     try:

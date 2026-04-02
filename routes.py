@@ -12,6 +12,17 @@ import pdf_generator
 main_bp = Blueprint('main_bp', __name__)
 
 
+# --- NOTIFICATION HELPER ---
+
+def _notify(roles, shipment_id, notif_type, message, extra_user_ids=None):
+    """Fan out a notification to all users with the given roles, plus any specific user_ids."""
+    user_ids = set(database.get_user_ids_by_roles(roles))
+    if extra_user_ids:
+        user_ids.update(extra_user_ids)
+    if user_ids:
+        database.create_notifications(list(user_ids), shipment_id, notif_type, message)
+
+
 # --- AUTH ROUTES ---
 
 @main_bp.route('/api/auth/register', methods=['POST'])
@@ -186,6 +197,13 @@ def update_status(shipment_id):
         result = database.update_shipment_status(str(shipment_id), new_status)
         if not result:
             return jsonify({"error": "Shipment not found"}), 404
+        shipment = database.get_shipment_simple(str(shipment_id))
+        bol = shipment['bol_number'] if shipment else str(shipment_id)
+        _notify(
+            ['Admin', 'Client', 'Driver'], str(shipment_id),
+            'status_changed',
+            f"Shipment BOL#{bol} status updated to {new_status}"
+        )
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -357,6 +375,19 @@ def assign_qa_inspector(shipment_id):
         inspection_id = database.assign_qa_to_shipment(
             str(shipment_id), qa_user_id, g.current_user['user_id']
         )
+        shipment = database.get_shipment_simple(str(shipment_id))
+        bol = shipment['bol_number'] if shipment else str(shipment_id)
+        # Notify the assigned QA Inspector directly
+        _notify(
+            [], str(shipment_id), 'qa_assigned',
+            f"You have been assigned to inspect shipment BOL#{bol}",
+            extra_user_ids=[qa_user_id]
+        )
+        # Notify all Admins
+        _notify(
+            ['Admin'], str(shipment_id), 'qa_assigned',
+            f"Shipment BOL#{bol} has been assigned for QA inspection"
+        )
         return jsonify({'inspection_id': inspection_id, 'status': 'success'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -387,6 +418,12 @@ def start_inspection(shipment_id):
         if inspection['assigned_qa_id'] != g.current_user['user_id']:
             return jsonify({'error': 'FORBIDDEN'}), 403
         database.start_inspection(inspection['inspection_id'], str(shipment_id))
+        shipment = database.get_shipment_simple(str(shipment_id))
+        bol = shipment['bol_number'] if shipment else str(shipment_id)
+        _notify(
+            ['Admin'], str(shipment_id), 'inspection_started',
+            f"QA inspection started on shipment BOL#{bol}"
+        )
         return jsonify({'status': 'success'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -455,6 +492,12 @@ def submit_inspection(shipment_id):
             inspection['inspection_id'], str(shipment_id),
             overall_disposition, data.get('notes', '')
         )
+        shipment = database.get_shipment_simple(str(shipment_id))
+        bol = shipment['bol_number'] if shipment else str(shipment_id)
+        _notify(
+            ['Admin', 'Client', 'Driver'], str(shipment_id), 'qa_verdict',
+            f"QA verdict for shipment BOL#{bol}: {overall_disposition} — status now {new_status}"
+        )
         return jsonify({'status': 'success', 'shipment_status': new_status}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -476,6 +519,65 @@ def resolve_qa_hold(shipment_id):
         new_status = database.resolve_qa_hold(
             inspection['inspection_id'], str(shipment_id), action
         )
+        shipment = database.get_shipment_simple(str(shipment_id))
+        bol = shipment['bol_number'] if shipment else str(shipment_id)
+        action_label = 'approved (override)' if action == 'approve' else 'sent back to QA'
+        # Notify the QA Inspector assigned to this shipment
+        _notify(
+            [], str(shipment_id), 'hold_resolved',
+            f"Admin resolved QA Hold on shipment BOL#{bol} — {action_label}",
+            extra_user_ids=[inspection['assigned_qa_id']]
+        )
+        # Notify Admin, Client, Driver
+        _notify(
+            ['Admin', 'Client', 'Driver'], str(shipment_id), 'hold_resolved',
+            f"QA Hold on shipment BOL#{bol} resolved — {action_label} — status now {new_status}"
+        )
         return jsonify({'status': 'success', 'shipment_status': new_status}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# --- NOTIFICATION ROUTES ---
+
+@main_bp.route('/api/notifications', methods=['GET'])
+@auth.require_auth
+def list_notifications():
+    """Returns all notifications for the authenticated user."""
+    try:
+        notifications = database.get_notifications(g.current_user['user_id'])
+        return jsonify([{
+            'notification_id': str(n['notification_id']),
+            'shipment_id': str(n['shipment_id']) if n['shipment_id'] else None,
+            'bol_number': n['bol_number'],
+            'type': n['type'],
+            'message': n['message'],
+            'is_read': n['is_read'],
+            'created_at': n['created_at'].isoformat() if n['created_at'] else None,
+        } for n in notifications]), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/notifications/<uuid:notification_id>/read', methods=['PATCH'])
+@auth.require_auth
+def mark_notification_read(notification_id):
+    """Marks a single notification as read."""
+    try:
+        updated = database.mark_notification_read(str(notification_id), g.current_user['user_id'])
+        if not updated:
+            return jsonify({'error': 'NOTIFICATION_NOT_FOUND'}), 404
+        return jsonify({'status': 'success'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/notifications/read-all', methods=['PATCH'])
+@auth.require_auth
+def mark_all_notifications_read():
+    """Marks all notifications for the authenticated user as read."""
+    try:
+        database.mark_all_notifications_read(g.current_user['user_id'])
+        return jsonify({'status': 'success'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
