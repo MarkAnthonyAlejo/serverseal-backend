@@ -1,5 +1,6 @@
 import io
 import os
+import re
 from flask import Blueprint, jsonify, request, current_app, g, Response
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -7,9 +8,50 @@ import qrcode
 import database
 import auth
 import pdf_generator
+import storage
+from extensions import limiter
 
 # This Blueprint will hold every route in our app
 main_bp = Blueprint('main_bp', __name__)
+
+# ---------------------------------------------------------------------------
+# Validation helpers
+# ---------------------------------------------------------------------------
+
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+_VALID_EVENT_TYPES = {'Pickup', 'Transit Check', 'Transfer', 'Delivery', 'Exception'}
+
+
+def _validate_email(email: str):
+    """Return an error string if the email is invalid, else None."""
+    if not email:
+        return 'EMAIL_REQUIRED'
+    if len(email) > 254:
+        return 'EMAIL_TOO_LONG'
+    if not _EMAIL_RE.match(email):
+        return 'EMAIL_INVALID'
+    return None
+
+
+def _validate_password(password: str):
+    """Return an error string if the password doesn't meet requirements, else None."""
+    if not password:
+        return 'PASSWORD_REQUIRED'
+    if len(password) < 8:
+        return 'PASSWORD_TOO_SHORT'
+    if len(password) > 128:
+        return 'PASSWORD_TOO_LONG'
+    return None
+
+
+def _str_field(value, max_len: int, field_name: str):
+    """Return (cleaned_value, error_string) for a required string field."""
+    if not value or not str(value).strip():
+        return None, f'{field_name.upper()}_REQUIRED'
+    cleaned = str(value).strip()
+    if len(cleaned) > max_len:
+        return None, f'{field_name.upper()}_TOO_LONG'
+    return cleaned, None
 
 
 # --- NOTIFICATION HELPER ---
@@ -26,14 +68,20 @@ def _notify(roles, shipment_id, notif_type, message, extra_user_ids=None):
 # --- AUTH ROUTES ---
 
 @main_bp.route('/api/auth/register', methods=['POST'])
+@limiter.limit("5 per minute")
 def register():
     data = request.json or {}
     email = data.get('email', '').strip().lower()
     password = data.get('password', '')
     role = data.get('role', 'Driver')
 
-    if not email or not password:
-        return jsonify({'error': 'EMAIL_AND_PASSWORD_REQUIRED'}), 400
+    email_err = _validate_email(email)
+    if email_err:
+        return jsonify({'error': email_err}), 400
+
+    password_err = _validate_password(password)
+    if password_err:
+        return jsonify({'error': password_err}), 400
 
     if role not in ('Admin', 'Driver', 'Client', 'QA Inspector'):
         return jsonify({'error': 'INVALID_ROLE'}), 400
@@ -62,6 +110,7 @@ def register():
 
 
 @main_bp.route('/api/auth/login', methods=['POST'])
+@limiter.limit("10 per minute")
 def login():
     data = request.json or {}
     email = data.get('email', '').strip().lower()
@@ -138,13 +187,18 @@ def delete_user(user_id):
 @auth.require_auth
 @auth.require_role('Admin', 'Driver')
 def add_shipment():
-    data = request.json
+    data = request.json or {}
+    bol, err = _str_field(data.get('bol_number'), 100, 'bol_number')
+    if err:
+        return jsonify({"error": err}), 400
+    origin, err = _str_field(data.get('origin'), 255, 'origin')
+    if err:
+        return jsonify({"error": err}), 400
+    destination, err = _str_field(data.get('destination'), 255, 'destination')
+    if err:
+        return jsonify({"error": err}), 400
     try:
-        new_id = database.create_shipment(
-            data['bol_number'],
-            data['origin'],
-            data['destination']
-        )
+        new_id = database.create_shipment(bol, origin, destination)
         return jsonify({"shipment_id": str(new_id), "status": "success"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -169,14 +223,26 @@ def list_shipments():
 @auth.require_auth
 @auth.require_role('Admin', 'Driver', 'QA Inspector')
 def add_events():
-    data = request.json
+    data = request.json or {}
+    shipment_id = data.get('shipment_id', '').strip()
+    if not shipment_id:
+        return jsonify({"error": "SHIPMENT_ID_REQUIRED"}), 400
+    event_type = data.get('event_type', '').strip()
+    if not event_type:
+        return jsonify({"error": "EVENT_TYPE_REQUIRED"}), 400
+    if event_type not in _VALID_EVENT_TYPES:
+        return jsonify({"error": "INVALID_EVENT_TYPE"}), 400
+    # Optional text fields — cap lengths to match DB columns
+    location = (data.get('location') or '')[:255] or None
+    hardware_details = (data.get('hardware_details') or '')[:5000] or None
+    notes = (data.get('notes') or '')[:5000] or None
     try:
         new_event_id = database.create_event(
-            data['shipment_id'],
-            data['event_type'],
-            data.get('location'),
-            data.get('hardware_details'),
-            data.get('notes'),
+            shipment_id,
+            event_type,
+            location,
+            hardware_details,
+            notes,
             # handler_id comes from the authenticated user, not the request body
             g.current_user['user_id'],
         )
@@ -278,20 +344,21 @@ def add_media():
 
     if file and event_id:
         filename = secure_filename(file.filename)
-        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
         try:
+            stored_path = storage.save_upload(
+                file, filename, current_app.config['UPLOAD_FOLDER']
+            )
             media_id = database.create_media(
                 event_id=event_id,
                 media_type=media_type,
-                file_path=file_path,
+                file_path=stored_path,
                 latitude=lat,
                 longitude=lon
             )
             return jsonify({
                 "message": "Media uploaded successfully",
                 "media_id": media_id,
-                "path": file_path
+                "path": stored_path
             }), 201
         except Exception as e:
             return jsonify({"error": str(e)}), 500
