@@ -106,7 +106,8 @@ def register():
     except Exception as e:
         if 'unique' in str(e).lower():
             return jsonify({'error': 'EMAIL_ALREADY_EXISTS'}), 409
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/auth/login', methods=['POST'])
@@ -162,7 +163,8 @@ def list_users():
             'created_at': u['created_at'].isoformat() if u['created_at'] else None,
         } for u in users]), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/users/<uuid:user_id>', methods=['DELETE'])
@@ -171,14 +173,15 @@ def list_users():
 def delete_user(user_id):
     # Prevent Admin from deleting themselves
     if str(user_id) == g.current_user['user_id']:
-        return jsonify({'error': 'CANNOT_DELETE_SELF'}), 400
+        return jsonify({'error': 'CANNOT_DELETE_SELF'}), 403
     try:
         deleted = database.delete_user(str(user_id))
         if not deleted:
             return jsonify({'error': 'USER_NOT_FOUND'}), 404
         return jsonify({'status': 'success'}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # --- SHIPMENT ROUTES ---
@@ -201,7 +204,8 @@ def add_shipment():
         new_id = database.create_shipment(bol, origin, destination)
         return jsonify({"shipment_id": str(new_id), "status": "success"}), 201
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route("/api/shipments", methods=["GET"])
@@ -214,7 +218,8 @@ def list_shipments():
             return jsonify({"error": "Database is currently unavailable"}), 503
         return jsonify(shipments), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # --- EVENT ROUTES ---
@@ -248,7 +253,8 @@ def add_events():
         )
         return jsonify({"event_id": str(new_event_id), "status": "success"}), 201
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route("/api/shipments/<uuid:shipment_id>/status", methods=["PATCH"])
@@ -274,7 +280,8 @@ def update_status(shipment_id):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route("/api/shipments/active", methods=["GET"])
@@ -286,7 +293,8 @@ def list_active_shipments():
             return jsonify({"error": "Database is currently unavailable"}), 503
         return jsonify(shipments), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route("/api/shipments/bol/<string:bol_number>", methods=["GET"])
@@ -298,7 +306,8 @@ def get_shipment_by_bol(bol_number):
             return jsonify({"error": f"No shipment found for BOL: {bol_number}"}), 404
         return jsonify(shipment), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route("/api/shipments/<uuid:shipment_id>", methods=["GET"])
@@ -310,7 +319,8 @@ def get_full_shipment(shipment_id):
             return jsonify({"error": "Shipment not found"}), 404
         return jsonify(data), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # --- MEDIA UPLOAD ROUTE ---
@@ -361,7 +371,8 @@ def add_media():
                 "path": stored_path
             }), 201
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            current_app.logger.error(f"Error: {str(e)}")
+            return jsonify({"error": "Internal server error"}), 500
 
     return jsonify({"error": "Missing event_id"}), 400
 
@@ -390,7 +401,8 @@ def download_report(shipment_id):
             headers={'Content-Disposition': f'attachment; filename="{filename}"'}
         )
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # --- QR CODE ROUTE ---
@@ -426,7 +438,8 @@ def list_qa_users():
         users = database.get_qa_users()
         return jsonify([{'user_id': str(u['user_id']), 'email': u['email']} for u in users]), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/shipments/<uuid:shipment_id>/inspection', methods=['POST'])
@@ -457,7 +470,8 @@ def assign_qa_inspector(shipment_id):
         )
         return jsonify({'inspection_id': inspection_id, 'status': 'success'}), 201
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/shipments/<uuid:shipment_id>/inspection', methods=['GET'])
@@ -470,7 +484,8 @@ def get_inspection(shipment_id):
             return jsonify({'error': 'INSPECTION_NOT_FOUND'}), 404
         return jsonify(inspection), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/shipments/<uuid:shipment_id>/inspection/start', methods=['PATCH'])
@@ -493,7 +508,8 @@ def start_inspection(shipment_id):
         )
         return jsonify({'status': 'success'}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/shipments/<uuid:shipment_id>/inspection/items', methods=['POST'])
@@ -521,7 +537,8 @@ def add_inspection_item(shipment_id):
         )
         return jsonify({'item_id': item_id, 'status': 'success'}), 201
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/shipments/<uuid:shipment_id>/inspection/items/<uuid:item_id>', methods=['DELETE'])
@@ -535,7 +552,8 @@ def delete_inspection_item(shipment_id, item_id):
             return jsonify({'error': 'ITEM_NOT_FOUND'}), 404
         return jsonify({'status': 'success'}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/shipments/<uuid:shipment_id>/inspection/submit', methods=['PATCH'])
@@ -567,7 +585,8 @@ def submit_inspection(shipment_id):
         )
         return jsonify({'status': 'success', 'shipment_status': new_status}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/shipments/<uuid:shipment_id>/inspection/resolve', methods=['PATCH'])
@@ -602,7 +621,8 @@ def resolve_qa_hold(shipment_id):
         )
         return jsonify({'status': 'success', 'shipment_status': new_status}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # --- NOTIFICATION ROUTES ---
@@ -623,7 +643,8 @@ def list_notifications():
             'created_at': n['created_at'].isoformat() if n['created_at'] else None,
         } for n in notifications]), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/notifications/<uuid:notification_id>/read', methods=['PATCH'])
@@ -636,7 +657,8 @@ def mark_notification_read(notification_id):
             return jsonify({'error': 'NOTIFICATION_NOT_FOUND'}), 404
         return jsonify({'status': 'success'}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @main_bp.route('/api/notifications/read-all', methods=['PATCH'])
@@ -647,4 +669,5 @@ def mark_all_notifications_read():
         database.mark_all_notifications_read(g.current_user['user_id'])
         return jsonify({'status': 'success'}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
